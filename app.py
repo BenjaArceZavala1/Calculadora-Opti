@@ -360,7 +360,7 @@ if run_btn:
         "📋 Resumen",
         "📈 Convergencia y trayectoria",
         "🔬 Tabla de iteraciones  ★",
-        "🎯 Análisis multi-punto  ★",
+        "🌐 Superficie 3D  ★",
     ])
 
     # ── Tab 1 · Resumen ───────────────────────────────────────────────────────
@@ -548,166 +548,123 @@ $$p_k = \frac{\log(\|e_{k+1}\| / \|e_k\|)}{\log(\|e_k\| / \|e_{k-1}\|)}, \qquad 
             mime="text/csv")
 
     # ══════════════════════════════════════════════════════════════════════════
-    # ★ Tab 4 · VALOR AGREGADO 2 — Multi-punto / cuencas de atracción
+    # ★ Tab 4 · VALOR AGREGADO 2 — Superficie 3D con trayectoria
     # ══════════════════════════════════════════════════════════════════════════
     with tab4:
-        st.subheader("🎯 Análisis de múltiples puntos de partida — cuencas de atracción")
+        st.subheader("🌐 Superficie 3D con trayectoria de optimización")
         st.markdown("""
-Ejecuta el mismo método desde **varios x₀ simultáneamente** para visualizar:
-- Las **cuencas de atracción** de cada mínimo local
-- La **sensibilidad a la inicialización**: cuántas iteraciones requiere cada región
-- Si la función tiene **uno o múltiples mínimos locales**
-
-> Esto muestra algo que la simple comparación de métodos no puede revelar:
-> **el mismo algoritmo puede converger a puntos distintos según el x₀ inicial.**
+Visualización **tridimensional** de la función f(x₁, x₂) con la trayectoria completa del algoritmo
+proyectada sobre la superficie. Muestra intuitivamente cómo el método desciende por la topografía
+de la función hasta encontrar el mínimo. Puedes **rotar, hacer zoom y explorar** la superficie con el mouse.
 """)
-
         if n_vars == 2:
-            ms_L, ms_R = st.columns([1, 2])
-            with ms_L:
-                ms_mode = st.selectbox("Generación de puntos de partida", [
-                    "Cuadrícula automática", "Aleatorio", "Manual"], key="ms_mode")
+            traj_arr = np.array(traj)
+            mg = max(float(np.abs(traj_arr).max()) * 0.7, 2.5)
+            x1r = np.linspace(traj_arr[:,0].min()-mg, traj_arr[:,0].max()+mg, 80)
+            x2r = np.linspace(traj_arr[:,1].min()-mg, traj_arr[:,1].max()+mg, 80)
+            X1, X2 = np.meshgrid(x1r, x2r)
+            try:
+                Z = np.vectorize(lambda a, b: f_func([a, b]))(X1, X2)
+                z_med = float(np.nanmedian(Z))
+                z_std = float(np.nanstd(Z))
+                Z = np.clip(Z, z_med - 6*z_std, z_med + 6*z_std)
+            except Exception:
+                Z = np.zeros_like(X1)
 
-                if ms_mode == "Cuadrícula automática":
-                    rng = st.slider("Rango [−r, r]", 1.0, 10.0, 4.0, 0.5, key="rng")
-                    gn  = st.slider("Puntos por lado", 2, 8, 4, key="gn")
-                    g1 = np.linspace(-rng, rng, gn)
-                    x0_list = [[float(a), float(b)] for a in g1 for b in g1]
-                elif ms_mode == "Aleatorio":
-                    rng2  = st.slider("Rango", 1.0, 10.0, 4.0, 0.5, key="rng2")
-                    nrand = st.slider("Cantidad de puntos", 5, 40, 16, key="nrand")
-                    np.random.seed(99)
-                    x0_list = np.random.uniform(-rng2, rng2, (nrand, 2)).tolist()
-                else:
-                    raw = st.text_area(
-                        "Un punto por línea (x1, x2):",
-                        "0, 0\n-2, 2\n3, -1\n1, 4\n-3, -3\n2, 2",
-                        height=150, key="ms_raw")
-                    x0_list = []
-                    for line in raw.strip().split("\n"):
-                        try:
-                            p = [float(v.strip()) for v in line.split(",")]
-                            if len(p) == 2:
-                                x0_list.append(p)
-                        except Exception:
-                            pass
+            traj_z = []
+            for pt in traj:
+                try:
+                    traj_z.append(f_func(pt))
+                except Exception:
+                    traj_z.append(float("nan"))
 
-                ms_mth = st.selectbox(
-                    "Método", ["Gradiente", "Gradiente Conjugado", "Newton"],
-                    key="ms_mth")
-                ms_mi = int(st.number_input(
-                    "Iter. máx. por punto", 10, 5000, 300, 50, key="ms_mi"))
-                run_ms = st.button(
-                    "🎯 Ejecutar análisis", use_container_width=True, key="ms_run")
+            fig_3d = go.Figure()
 
-            with ms_R:
-                if run_ms and x0_list:
-                    with st.spinner(f"⚙️ Ejecutando {len(x0_list)} puntos de partida…"):
-                        ms_res = []
-                        for x0p in x0_list:
-                            try:
-                                xm, fm, itp, erp, _, trp, msgp = dispatch(
-                                    ms_mth, f_func, grad_func, hess_func,
-                                    x0p, c1, c2, alpha_max, ms_mi, tol)
-                                ms_res.append({
-                                    "x0": x0p, "xm": xm, "fm": fm,
-                                    "iters": itp, "traj": trp,
-                                    "ok": "Convergencia" in msgp})
-                            except Exception:
-                                ms_res.append({
-                                    "x0": x0p, "xm": None, "fm": None,
-                                    "iters": 0, "traj": [], "ok": False})
+            fig_3d.add_trace(go.Surface(
+                x=x1r, y=x2r, z=Z,
+                colorscale="Blues",
+                opacity=0.80,
+                showscale=True,
+                colorbar=dict(title="f(x)", thickness=14, len=0.65,
+                              tickfont=dict(color="#c9d1d9")),
+                name="f(x₁, x₂)"))
 
-                    all_xy = np.array([r["x0"] for r in ms_res])
-                    mg3 = max(float(np.abs(all_xy).max()) * 0.6, 2.0)
-                    xr3 = np.linspace(
-                        all_xy[:,0].min()-mg3, all_xy[:,0].max()+mg3, 140)
-                    yr3 = np.linspace(
-                        all_xy[:,1].min()-mg3, all_xy[:,1].max()+mg3, 140)
-                    X3, Y3 = np.meshgrid(xr3, yr3)
-                    try:
-                        Z3 = np.vectorize(lambda a, b: f_func([a, b]))(X3, Y3)
-                    except Exception:
-                        Z3 = np.zeros_like(X3)
+            fig_3d.add_trace(go.Scatter3d(
+                x=traj_arr[:,0], y=traj_arr[:,1], z=traj_z,
+                mode="lines+markers",
+                name="Trayectoria",
+                line=dict(color="#f0883e", width=5),
+                marker=dict(size=3, color="#f0883e", opacity=0.8)))
 
-                    fig_ms = go.Figure()
-                    fig_ms.add_trace(go.Contour(
-                        x=xr3, y=yr3, z=Z3, colorscale="Greys",
-                        opacity=0.45, showscale=False,
-                        contours=dict(showlabels=False)))
+            fig_3d.add_trace(go.Scatter3d(
+                x=[traj_arr[0,0]], y=[traj_arr[0,1]], z=[traj_z[0]],
+                mode="markers", name="Inicio x₀",
+                marker=dict(size=10, color="#3fb950", symbol="circle",
+                            line=dict(color="white", width=1))))
 
-                    max_it_all = max((r["iters"] for r in ms_res), default=1)
-                    for r in ms_res:
-                        frac = r["iters"] / max(max_it_all, 1)
-                        clr  = (f"rgba({int(255*frac)},"
-                                f"{int(255*(1-frac))},140,0.7)")
-                        if r["traj"] and len(r["traj"]) > 1:
-                            ta = np.array(r["traj"])
-                            fig_ms.add_trace(go.Scatter(
-                                x=ta[:,0], y=ta[:,1], mode="lines",
-                                line=dict(color=clr, width=1),
-                                showlegend=False, hoverinfo="skip"))
-                        dot_clr = "#3fb950" if r["ok"] else "#f85149"
-                        fm_str  = (f"{r['fm']:.4e}"
-                                   if r["fm"] is not None else "N/A")
-                        fig_ms.add_trace(go.Scatter(
-                            x=[r["x0"][0]], y=[r["x0"][1]],
-                            mode="markers",
-                            marker=dict(size=11, color=dot_clr,
-                                        line=dict(color="white", width=1.5)),
-                            showlegend=False,
-                            hovertemplate=(
-                                f"x₀=({r['x0'][0]:.2f},{r['x0'][1]:.2f})<br>"
-                                f"Iteraciones: {r['iters']}<br>"
-                                f"{'✓ Convergió' if r['ok'] else '✗ No convergió'}"
-                                f"<br>f(x*)={fm_str}<extra></extra>")))
+            fig_3d.add_trace(go.Scatter3d(
+                x=[x_min[0]], y=[x_min[1]], z=[f_min],
+                mode="markers", name="Mínimo x*",
+                marker=dict(size=12, color="#f85149", symbol="diamond",
+                            line=dict(color="white", width=1))))
 
-                    fig_ms.add_trace(go.Scatter(
-                        x=[None], y=[None], mode="markers",
-                        name="✓ Convergió",
-                        marker=dict(size=10, color="#3fb950")))
-                    fig_ms.add_trace(go.Scatter(
-                        x=[None], y=[None], mode="markers",
-                        name="✗ No convergió",
-                        marker=dict(size=10, color="#f85149")))
-                    fig_ms.update_layout(
-                        title=(f"Cuencas de atracción — "
-                               f"{ms_mth} ({len(ms_res)} puntos)"),
-                        xaxis_title="x₁", yaxis_title="x₂", height=480,
-                        legend=dict(orientation="h", y=-0.18),
-                        xaxis=dict(gridcolor="#21262d"),
-                        yaxis=dict(gridcolor="#21262d"),
-                        **PA)
-                    st.plotly_chart(fig_ms, use_container_width=True)
+            fig_3d.update_layout(
+                title=dict(
+                    text=f"Superficie f(x₁,x₂) — {method} | {iters} iteraciones",
+                    font=dict(color="#c9d1d9", size=14)),
+                scene=dict(
+                    xaxis=dict(title="x₁", gridcolor="#30363d",
+                               backgroundcolor="#161b22", color="#8b949e"),
+                    yaxis=dict(title="x₂", gridcolor="#30363d",
+                               backgroundcolor="#161b22", color="#8b949e"),
+                    zaxis=dict(title="f(x₁,x₂)", gridcolor="#30363d",
+                               backgroundcolor="#161b22", color="#8b949e"),
+                    bgcolor="#0d1117",
+                    camera=dict(eye=dict(x=1.6, y=-1.6, z=1.1))),
+                legend=dict(font=dict(color="#c9d1d9"),
+                            bgcolor="rgba(13,17,23,0.7)",
+                            bordercolor="#30363d", borderwidth=1),
+                height=600,
+                **PA)
+            st.plotly_chart(fig_3d, use_container_width=True)
+            st.caption(
+                "💡 Arrastra para rotar · Scroll para zoom · "
+                "Doble click para resetear la vista. "
+                "Punto verde = inicio x₀ · Punto rojo = mínimo x*")
 
-                    df_ms = pd.DataFrame([{
-                        "x₀ = (x1, x2)":
-                            f"({r['x0'][0]:.2f}, {r['x0'][1]:.2f})",
-                        "x* encontrado":
-                            (f"({r['xm'][0]:.4f}, {r['xm'][1]:.4f})"
-                             if r["xm"] is not None else "—"),
-                        "f(x*)":
-                            f"{r['fm']:.6e}" if r["fm"] is not None else "—",
-                        "Iter.": r["iters"],
-                        "Estado": "✓" if r["ok"] else "✗",
-                    } for r in ms_res])
-                    st.dataframe(df_ms, hide_index=True, use_container_width=True)
-                    n_ok = sum(r["ok"] for r in ms_res)
-                    st.caption(
-                        f"**{n_ok}/{len(ms_res)}** puntos convergieron "
-                        f"dentro de {ms_mi} iteraciones.")
-                else:
-                    st.info("👈 Configura los puntos y presiona **Ejecutar análisis**")
-                    st.markdown("""
-**¿Por qué analizar múltiples puntos de partida?**
+        elif n_vars == 1:
+            x1r = np.linspace(float(x0[0]) - 5, float(x0[0]) + 5, 400)
+            try:
+                y1r = np.array([f_func([xi]) for xi in x1r])
+            except Exception:
+                y1r = np.zeros_like(x1r)
+            traj_x = [float(t[0]) for t in traj]
+            traj_y_vals = []
+            for t in traj:
+                try:
+                    traj_y_vals.append(f_func(t))
+                except Exception:
+                    traj_y_vals.append(float("nan"))
+            fig_1d = go.Figure()
+            fig_1d.add_trace(go.Scatter(
+                x=x1r, y=y1r, mode="lines", name="f(x₁)",
+                line=dict(color="#00ffc8", width=2.5)))
+            fig_1d.add_trace(go.Scatter(
+                x=traj_x, y=traj_y_vals, mode="markers", name="Iteraciones",
+                marker=dict(size=7, color="#f0883e", opacity=0.8)))
+            fig_1d.add_trace(go.Scatter(
+                x=[x_min[0]], y=[f_min], mode="markers", name="x*",
+                marker=dict(size=14, color="#f85149", symbol="star")))
+            fig_1d.update_layout(
+                xaxis_title="x₁", yaxis_title="f(x₁)", height=420,
+                xaxis=dict(gridcolor="#21262d"),
+                yaxis=dict(gridcolor="#21262d"),
+                **PA)
+            st.plotly_chart(fig_1d, use_container_width=True)
 
-Los métodos de optimización son sensibles a la inicialización:
-- Diferentes x₀ pueden converger a distintos mínimos locales
-- El número de iteraciones varía según la región de inicio
-- Permite identificar la **cuenca de atracción** de cada mínimo
-- Fundamental para elegir buenos puntos iniciales en problemas reales
-""")
         else:
             st.info(
-                f"El mapa visual de cuencas está disponible para funciones de "
-                f"**2 variables**. Tu función tiene {n_vars} variables.")
+                f"La visualización 3D está disponible para funciones de "
+                f"**2 variables**. Tu función tiene {n_vars} variables. "
+                f"Consulta la pestaña de Convergencia y la Tabla de iteraciones.")
+
