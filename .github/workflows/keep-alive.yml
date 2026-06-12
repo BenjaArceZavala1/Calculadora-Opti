@@ -1,0 +1,16 @@
+name: Keep Streamlit App Alive
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Streamlit App
+        run: |
+          curl -sL -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
+          https://calculadora-opti-dev3xnzdpc6jtryx5d3fok.streamlit.app/ \
+          -o /dev/null -w "Status: %{http_code}\n"
